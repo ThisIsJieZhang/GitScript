@@ -1,0 +1,75 @@
+def modifyCVS(List<String> pathList) {
+    XmlParser xmlParser = new XmlParser()
+    xmlParser.setTrimWhitespace(true)
+    def vcsFilePath = rootProject.getProjectDir().absolutePath + "/.idea/vcs.xml"
+
+    Node baseResRootNode = xmlParser.parse(vcsFilePath)
+    if (baseResRootNode) {
+        println "modifyCVS exists, pathList:${pathList.size()}"
+        List nodeList = baseResRootNode.children()
+        Node componentNode = null
+        for (Node oneNode : nodeList) {
+            if (oneNode != null) {
+                String attrName = oneNode.attribute('name');
+                if ("VcsDirectoryMappings" == attrName) {
+                    componentNode = oneNode;
+                    break
+                }
+            }
+        }
+
+        if (componentNode != null) {
+            println "modifyCVS nodeMapping write start"
+            componentNode.children().clear()
+
+            for (String path : pathList) {
+                Map attributeMap = new LinkedHashMap<String, String>()
+                attributeMap.put("directory", path)
+                attributeMap.put("vcs", "Git")
+                componentNode.appendNode("mapping", attributeMap)
+            }
+
+            PrintWriter out = new PrintWriter(new FileWriter(vcsFilePath))
+            out << '<?xml version="1.0" encoding="utf-8"?>\n'
+            XmlNodePrinter nodePrinter = new XmlNodePrinter(out)
+            nodePrinter.with {
+                preserveWhitespace = true
+                expandEmptyElements = false
+            }
+            nodePrinter.print(baseResRootNode)
+            out.flush()
+            out.close()
+
+            println "modifyCVS nodeMapping write over"
+        }
+    }
+}
+
+task installGitVCS {
+    boolean isEnable = true
+    this.rootProject.file('local.properties').with {
+        Properties p = new Properties()
+        it.withReader('UTF-8') { p.load(it) }
+
+        def vcsMapping = p.get('vcs_mapping')
+        if (vcsMapping != null) {
+            println "installGitVCS vcsMapping:${vcsMapping}"
+            isEnable = Boolean.parseBoolean(vcsMapping)
+        }
+    }
+
+    if (!ISCI.toBoolean() && isEnable) {
+        println "+---installGitVCS enable"
+        def subProjectSet = this.rootProject.getSubprojects()
+        List<String> pathList = new ArrayList<String>()
+        pathList.add(this.rootProject.getProjectDir().absolutePath) // 添加主工程
+        subProjectSet.eachWithIndex {
+            Project project, int index ->
+                println "+---installGitVCS Project':$project.name',path:${project.getProjectDir().absolutePath}"
+                pathList.add(project.getProjectDir().absolutePath) // 添加子工程
+        }
+        modifyCVS(pathList)
+    }else {
+        println "+---installGitVCS disable"
+    }
+}
